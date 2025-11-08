@@ -35,20 +35,4 @@ async def on_ready():
     while True:
         price, change_24h = await get_price_data()
 
-        # Choose emoji based on 24h change
-        emoji = "🟢" if change_24h >= 0 else "🔴"
-
-        # Format nickname without "Filecoin": "$5.12 🟢 +2.10%"
-        nickname = f"${price:.2f} {emoji} {change_24h:+.2f}%"
-
-        # Update bot nickname
-        try:
-            await bot_member.edit(nick=nickname)
-        except Exception as e:
-            print(f"Error updating nickname: {e}")
-
-        # Update every 60 seconds
-        await asyncio.sleep(60)
-
-# Run the bot
-client.run(TOKEN)
+        # Choose emoji based on 24
