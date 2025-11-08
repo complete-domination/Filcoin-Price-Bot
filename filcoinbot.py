@@ -3,17 +3,25 @@ import aiohttp
 import asyncio
 import os
 
-TOKEN = os.environ['TOKEN']
-GUILD_ID = os.environ.get('GUILD_ID')  # optional; if omitted, updates all guilds
-
+TOKEN = os.environ.get('TOKEN')
+GUILD_ID = os.environ.get('GUILD_ID')  # optional; if unset, updates all guilds
 COIN = "internet-computer"  # ICP
+
+if not TOKEN:
+    raise SystemExit("Missing env var TOKEN")
+# GUILD_ID is optional; only raise if you *require* a single server
+if GUILD_ID:
+    try:
+        GUILD_ID = int(GUILD_ID)
+    except ValueError:
+        raise SystemExit("GUILD_ID must be an integer")
 
 intents = discord.Intents.default()
 intents.guilds = True
-intents.members = True  # make sure this is ALSO enabled in the dev portal
+intents.members = True  # make sure 'Server Members Intent' is ON in the Dev Portal
 client = discord.Client(intents=intents)
 
-update_task = None  # to avoid multiple loops
+update_task = None  # guard so we don’t start multiple loops
 
 async def get_price_data():
     url = f"https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids={COIN}"
@@ -28,14 +36,14 @@ async def get_price_data():
             return price, change_24h
 
 async def update_guild(guild: discord.Guild):
-    # Fetch fresh member object (don’t rely on cache)
+    # fetch a fresh member (don’t rely on cache)
     try:
         me = guild.me or await guild.fetch_member(client.user.id)
     except discord.HTTPException as e:
         print(f"[{guild.name}] Could not fetch bot member: {e}")
         return
 
-    # Permission sanity check
+    # permissions
     perms = me.guild_permissions
     if not perms.change_nickname and not perms.manage_nicknames:
         print(f"[{guild.name}] Missing permission: Change Nickname (or Manage Nicknames).")
@@ -49,18 +57,15 @@ async def update_guild(guild: discord.Guild):
 
     emoji = "🟢" if change_24h >= 0 else "🔴"
     nickname = f"${price:.2f} {emoji} {change_24h:+.2f}%"
-
-    # 32 char limit safety
     if len(nickname) > 32:
         nickname = nickname[:32]
 
     try:
         await me.edit(nick=nickname, reason="Auto price update")
-        # Optional presence line (comment out if you don’t want it)
         await client.change_presence(activity=discord.Game(name=f"24h {change_24h:+.2f}%"))
-        print(f"[{guild.name}] Nick updated to: {nickname}")
+        print(f"[{guild.name}] Nick updated → {nickname}")
     except discord.Forbidden:
-        print(f"[{guild.name}] Forbidden: role hierarchy or permissions block nickname change.")
+        print(f"[{guild.name}] Forbidden: role hierarchy/permissions block nickname change.")
     except discord.HTTPException as e:
         print(f"[{guild.name}] HTTP error updating nick: {e}")
 
@@ -70,7 +75,7 @@ async def updater_loop():
         try:
             target_guilds = []
             if GUILD_ID:
-                g = client.get_guild(int(GUILD_ID))
+                g = client.get_guild(GUILD_ID)
                 if g is None:
                     print("Configured GUILD_ID not found. Is the bot in that server?")
                 else:
@@ -85,12 +90,15 @@ async def updater_loop():
         except Exception as e:
             print(f"Updater loop error: {e}")
 
-        await asyncio.sleep(60)  # adjust interval as you like
+        await asyncio.sleep(60)  # update interval
 
 @client.event
 async def on_ready():
     global update_task
     print(f"Logged in as {client.user} in {len(client.guilds)} guild(s).")
-    # Start one updater task only
     if update_task is None or update_task.done():
         update_task = asyncio.create_task(updater_loop())
+
+# 🔧 THIS WAS MISSING: actually start the client
+if __name__ == "__main__":
+    client.run(TOKEN)
